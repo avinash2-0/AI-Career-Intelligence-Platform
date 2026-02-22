@@ -71,22 +71,5 @@ AI Model (Sentence Transformers)
 ⬇  
 RapidAPI Job Search API  
 
----
 
-## 📦 Installation Guide
-
-### 🔹 Backend Setup
-
-```bash
-cd backend
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn main:app --reload
-http://127.0.0.1:8000
-
-cd frontend
-npm install
-npm start
-http://localhost:3000
 
