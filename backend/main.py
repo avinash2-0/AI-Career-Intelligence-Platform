@@ -3,22 +3,33 @@ from fastapi.middleware.cors import CORSMiddleware
 from sentence_transformers import SentenceTransformer, util
 import pdfplumber
 import requests
+import io
+import os
 
 app = FastAPI()
 
-# Allow frontend connection
+# ==========================
+# CORS (Frontend Connection)
+# ==========================
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Change to frontend URL in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Load AI model once
+# ==========================
+# Load AI Model (Only Once)
+# ==========================
+
 model = SentenceTransformer("all-MiniLM-L6-v2")
 
+# ==========================
 # Skills Database
+# ==========================
+
 SKILLS_DB = [
     "python", "java", "c++", "javascript", "react", "nodejs",
     "html", "css", "sql", "mysql", "postgresql", "mongodb",
@@ -27,30 +38,45 @@ SKILLS_DB = [
     "tensorflow", "pytorch", "django", "rest api", "kubernetes"
 ]
 
-# 🔐 Replace with your own RapidAPI key
-RAPID_API_KEY = "7bea8e943cmsh0cfa48d89783ca0p1c6aaejsna8bcf15c445a"
+# ==========================
+# Environment Variable (IMPORTANT)
+# ==========================
 
+RAPID_API_KEY = os.getenv("RAPID_API_KEY")
 
 # ==========================
 # UTIL FUNCTIONS
 # ==========================
 
-def extract_resume_text(file):
-    text = ""
-    with pdfplumber.open(file.file) as pdf:
-        for page in pdf.pages:
-            content = page.extract_text()
-            if content:
-                text += content.lower()
-    return text
+def extract_resume_text(file: UploadFile):
+    try:
+        content = file.file.read()
+        pdf_stream = io.BytesIO(content)
+
+        text = ""
+        with pdfplumber.open(pdf_stream) as pdf:
+            for page in pdf.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text.lower()
+
+        return text
+
+    except Exception:
+        return ""
 
 
 def extract_skills(text):
-    found = []
-    for skill in SKILLS_DB:
-        if skill in text:
-            found.append(skill)
-    return list(set(found))
+    return list(set(skill for skill in SKILLS_DB if skill in text))
+
+
+# ==========================
+# HEALTH CHECK (Important for Render)
+# ==========================
+
+@app.get("/")
+def health():
+    return {"status": "Backend is running 🚀"}
 
 
 # ==========================
@@ -62,32 +88,42 @@ async def analyze_resume(
     resume: UploadFile = File(...),
     job_description: str = Form(...)
 ):
-    resume_text = extract_resume_text(resume)
-    resume_skills = extract_skills(resume_text)
+    try:
+        resume_text = extract_resume_text(resume)
 
-    jd_skills = extract_skills(job_description.lower())
+        if not resume_text:
+            return {"error": "Could not extract text from resume"}
 
-    matched = list(set(resume_skills) & set(jd_skills))
-    missing = list(set(jd_skills) - set(resume_skills))
+        resume_skills = extract_skills(resume_text)
+        jd_skills = extract_skills(job_description.lower())
 
-    skill_score = 0
-    if len(jd_skills) > 0:
-        skill_score = (len(matched) / len(jd_skills)) * 100
+        matched = list(set(resume_skills) & set(jd_skills))
+        missing = list(set(jd_skills) - set(resume_skills))
 
-    emb1 = model.encode(resume_text, convert_to_tensor=True)
-    emb2 = model.encode(job_description, convert_to_tensor=True)
-    semantic_score = float(util.cos_sim(emb1, emb2)[0][0]) * 100
+        # Skill Score
+        skill_score = 0
+        if len(jd_skills) > 0:
+            skill_score = (len(matched) / len(jd_skills)) * 100
 
-    final_score = (semantic_score * 0.5) + (skill_score * 0.5)
+        # Semantic Score
+        emb1 = model.encode(resume_text, convert_to_tensor=True)
+        emb2 = model.encode(job_description, convert_to_tensor=True)
+        semantic_score = float(util.cos_sim(emb1, emb2)[0][0]) * 100
 
-    return {
-        "final_score": round(final_score, 2),
-        "semantic_score": round(semantic_score, 2),
-        "skill_score": round(skill_score, 2),
-        "matched": matched,
-        "missing": missing,
-        "resume_skills": resume_skills
-    }
+        # Final Score
+        final_score = (semantic_score * 0.5) + (skill_score * 0.5)
+
+        return {
+            "final_score": round(final_score, 2),
+            "semantic_score": round(semantic_score, 2),
+            "skill_score": round(skill_score, 2),
+            "matched": matched,
+            "missing": missing,
+            "resume_skills": resume_skills
+        }
+
+    except Exception as e:
+        return {"error": str(e)}
 
 
 # ==========================
@@ -97,6 +133,9 @@ async def analyze_resume(
 @app.post("/search-jobs")
 def search_jobs(data: dict = Body(...)):
 
+    if not RAPID_API_KEY:
+        return {"jobs": [], "error": "RapidAPI key not configured"}
+
     role = data.get("role")
     resume_skills = data.get("resume_skills", [])
 
@@ -105,7 +144,6 @@ def search_jobs(data: dict = Body(...)):
 
     url = "https://jsearch.p.rapidapi.com/search"
 
-    # 🇮🇳 INDIA FILTER
     querystring = {
         "query": role,
         "page": "1",
@@ -119,18 +157,17 @@ def search_jobs(data: dict = Body(...)):
     }
 
     try:
-        response = requests.get(url, headers=headers, params=querystring)
+        response = requests.get(url, headers=headers, params=querystring, timeout=15)
         response.raise_for_status()
         api_data = response.json()
+
     except Exception as e:
         return {"jobs": [], "error": str(e)}
 
     jobs = api_data.get("data", [])
-
     enhanced_jobs = []
 
     for job in jobs:
-
         description = job.get("job_description", "").lower()
         job_skills = extract_skills(description)
 
@@ -141,7 +178,6 @@ def search_jobs(data: dict = Body(...)):
         if len(job_skills) > 0:
             match_score = (len(matched) / len(job_skills)) * 100
 
-        # 🧠 Smart Location Handling
         city = job.get("job_city")
         state = job.get("job_state")
         country = job.get("job_country")
@@ -174,4 +210,3 @@ def search_jobs(data: dict = Body(...)):
     )
 
     return {"jobs": enhanced_jobs[:10]}
-
