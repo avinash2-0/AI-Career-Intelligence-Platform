@@ -10,7 +10,10 @@ function JobSearch() {
     JSON.parse(localStorage.getItem("resume_skills")) || [];
 
   const searchJobs = async () => {
-    if (!role) return;
+    if (!role) {
+      alert("Please enter a job role");
+      return;
+    }
 
     setLoading(true);
 
@@ -29,10 +32,16 @@ function JobSearch() {
         }
       );
 
+      console.log("Response status:", response.status);
+
       const data = await response.json();
-      setJobs(data.jobs);
+      console.log("Backend response:", data);
+
+      // Safe fallback if jobs is undefined
+      setJobs(data.jobs || []);
     } catch (error) {
       console.error("Error fetching jobs:", error);
+      alert("Something went wrong while fetching jobs.");
     }
 
     setLoading(false);
