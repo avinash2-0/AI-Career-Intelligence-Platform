@@ -11,6 +11,8 @@ function ResumePage() {
 
   const resultRef = useRef(null);
 
+  const BASE_URL = "https://ai-career-intelligence-platform-1.onrender.com";
+
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
   };
@@ -28,7 +30,7 @@ function ResumePage() {
     try {
       setLoading(true);
 
-      const response = await fetch("http://127.0.0.1:8000/analyze", {
+      const response = await fetch(`${BASE_URL}/analyze`, {
         method: "POST",
         body: formData,
       });
@@ -57,7 +59,7 @@ function ResumePage() {
     }
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/search-jobs", {
+      const response = await fetch(`${BASE_URL}/search-jobs`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -174,6 +176,7 @@ function ResumePage() {
                   </a>
                 </div>
               ))}
+
             </div>
           )}
 
