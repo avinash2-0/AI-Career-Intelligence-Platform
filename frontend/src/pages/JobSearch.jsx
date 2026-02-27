@@ -5,8 +5,7 @@ function JobSearch() {
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // ✅ NEW: Get resume skills from localStorage
-  // (Store this after resume analysis)
+  // Get resume skills from localStorage
   const resumeSkills =
     JSON.parse(localStorage.getItem("resume_skills")) || [];
 
@@ -17,7 +16,7 @@ function JobSearch() {
 
     try {
       const response = await fetch(
-        "http://127.0.0.1:8000/search-jobs",
+        "https://ai-career-intelligence-platform-1.onrender.com/search-jobs",
         {
           method: "POST",
           headers: {
